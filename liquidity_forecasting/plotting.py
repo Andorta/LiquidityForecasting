@@ -21,7 +21,10 @@ def plot_forecasts(
         squeeze=False,
     )
 
-    for axis, (currency, forecast) in zip(axes.flatten(), forecasts.items()):
+    for axis, (currency, forecast) in zip(
+        axes.flatten(),
+        forecasts.items(),
+    ):
         if currency not in historical_data.columns:
             raise ValueError(
                 f"Currency '{currency}' is missing from historical data."
@@ -44,7 +47,7 @@ def plot_forecasts(
 
         axis.set_title(f"{currency} liquidity forecast")
         axis.set_xlabel("Date")
-        axis.set_ylabel("Cash balance")
+        axis.set_ylabel("Daily net cashflow (local currency)")
         axis.legend()
         axis.grid(alpha=0.3)
 

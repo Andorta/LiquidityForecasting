@@ -1,31 +1,56 @@
 import pandas as pd
 
-from liquidity_forecasting.data import load_cashflow_data, preprocess_data
+from liquidity_forecasting.data import (
+    generate_sample_cashflows,
+    preprocess_data,
+)
 
 
-def test_load_cashflow_data_default_shape():
-    """Data loader should return a non-empty daily time series with expected currencies."""
-    df = load_cashflow_data()
-    # basic structure
-    assert isinstance(df.index, pd.DatetimeIndex)
-    assert not df.empty
-    # by default we expect 6 currencies
-    assert set(df.columns) == {"EUR", "USD", "JPY", "BRL", "INR", "AUD"}
+def test_generate_sample_cashflows_default_shape():
+    """Sample data should contain the expected currencies."""
+    data = generate_sample_cashflows()
+
+    assert isinstance(data.index, pd.DatetimeIndex)
+    assert not data.empty
+    assert set(data.columns) == {
+        "EUR",
+        "USD",
+        "JPY",
+        "BRL",
+        "INR",
+        "AUD",
+    }
 
 
 def test_preprocess_data_forward_fills_missing_values():
     """Preprocessing should forward-fill missing values."""
-    df = load_cashflow_data().copy()
+    data = generate_sample_cashflows().copy()
+    data.iloc[10, 0] = None
 
-    # introduce a missing value in the middle
-    df.iloc[10, 0] = None
-    # pandas converts None to NaN for numeric dtypes
-    assert pd.isna(df.iloc[10, 0])
+    assert pd.isna(data.iloc[10, 0])
 
-    processed = preprocess_data(df)
+    processed = preprocess_data(data)
 
-    # after preprocessing, there should be no NaNs in the data
     assert not processed.isna().any().any()
-    # and the introduced NaN should have been forward-filled
     assert processed.iloc[10, 0] == processed.iloc[9, 0]
 
+
+def test_sample_cashflows_are_reproducible():
+    first = generate_sample_cashflows(seed=123)
+    second = generate_sample_cashflows(seed=123)
+
+    pd.testing.assert_frame_equal(first, second)
+
+
+def test_sample_cashflows_change_with_seed():
+    first = generate_sample_cashflows(seed=123)
+    second = generate_sample_cashflows(seed=456)
+
+    assert not first.equals(second)
+
+
+def test_sample_cashflows_include_inflows_and_outflows():
+    data = generate_sample_cashflows()
+
+    assert (data > 0).any().all()
+    assert (data < 0).any().all()

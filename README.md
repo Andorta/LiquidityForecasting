@@ -16,6 +16,11 @@ Built with:
 
 ---
 
+> **Data note:** The default demonstration dataset is synthetic. It models
+> recurring receipts, payroll, month-end payments, operational noise, and
+> occasional liquidity shocks. It does not contain real company or customer
+> financial data.
+
 ## 🚀 Project Overview
 
 This project simulates and forecasts daily cashflows for multiple currencies (EUR, USD, JPY, BRL, INR, AUD), then optimizes capital allocation based on predicted liquidity needs.
