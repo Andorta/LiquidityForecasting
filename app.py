@@ -72,13 +72,7 @@ for ccy in currencies:
     st.write(f"### {ccy} Forecast")
 
     historical = df[ccy].iloc[-60:]
-    future_index = pd.date_range(
-        start=df.index[-1] + pd.Timedelta(days=1),
-        periods=horizon
-    )
-    combined = pd.concat(
-        [historical, pd.Series(forecasts[ccy].values, index=future_index)]
-    )
+    combined = pd.concat([historical, forecasts[ccy]])
 
     st.line_chart(combined)
 
