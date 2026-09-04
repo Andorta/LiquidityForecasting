@@ -8,6 +8,7 @@ from liquidity_forecasting.data import (
 from liquidity_forecasting.model import forecast_currency
 from liquidity_forecasting.allocation import optimize_allocation
 from liquidity_forecasting.export import save_to_excel
+from liquidity_forecasting.validation import validate_cashflow_data
 
 from io import BytesIO
 
@@ -43,7 +44,12 @@ else:
         st.warning("Upload a file or enable simulated data.")
         st.stop()
 
-df = preprocess_data(df)
+try:
+    df = preprocess_data(df)
+    validate_cashflow_data(df)
+except (TypeError, ValueError) as error:
+    st.error(f"Invalid cashflow data: {error}")
+    st.stop()
 
 st.subheader("Historical Cashflows")
 st.line_chart(df)
