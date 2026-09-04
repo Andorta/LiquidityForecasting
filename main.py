@@ -3,10 +3,12 @@ from liquidity_forecasting.model import forecast_currency
 from liquidity_forecasting.allocation import optimize_allocation
 from liquidity_forecasting.plotting import plot_forecasts
 from liquidity_forecasting.export import save_to_excel
+from liquidity_forecasting.validation import validate_cashflow_data
 
 def main():
     df = load_cashflow_data()
     df = preprocess_data(df)
+    validate_cashflow_data(df)
 
     forecasts = {
         currency: forecast_currency(df, currency)
