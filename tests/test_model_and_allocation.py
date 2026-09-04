@@ -19,6 +19,14 @@ def test_forecast_currency_produces_expected_horizon_without_nans():
     s = pd.Series(forecast)
     assert s.isna().sum() == 0
 
+    expected_index = pd.date_range(
+    start=df.index.max() + pd.Timedelta(days=1),
+    periods=horizon,
+    freq="D",)
+    assert isinstance(forecast.index, pd.DatetimeIndex)
+    assert forecast.index.equals(expected_index)
+    assert forecast.name == "EUR"
+
 
 def test_optimize_allocation_sums_to_one_and_is_positive():
     """Optimized allocations should form a valid probability distribution."""
