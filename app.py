@@ -1,7 +1,10 @@
 import streamlit as st
 import pandas as pd
 
-from liquidity_forecasting.data import load_cashflow_data, preprocess_data
+from liquidity_forecasting.data import (
+    generate_sample_cashflows,
+    preprocess_data,
+)
 from liquidity_forecasting.model import forecast_currency
 from liquidity_forecasting.allocation import optimize_allocation
 from liquidity_forecasting.export import save_to_excel
@@ -28,7 +31,7 @@ st.sidebar.header("Data Options")
 use_simulated = st.sidebar.checkbox("Use simulated sample data", value=True)
 
 if use_simulated:
-    df = load_cashflow_data()
+    df = generate_sample_cashflows()
 else:
     uploaded_file = st.sidebar.file_uploader("Upload Cashflow File", type=["csv", "xlsx"])
     if uploaded_file:
