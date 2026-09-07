@@ -12,6 +12,10 @@ from liquidity_forecasting.validation import validate_cashflow_data
 
 from io import BytesIO
 
+from liquidity_forecasting.balances import (
+    DEFAULT_OPENING_BALANCES,
+    project_balances,
+)
 
 # ---------------------------
 # Streamlit App Config
@@ -66,6 +70,27 @@ currencies = st.sidebar.multiselect(
     "Select currencies", df.columns.tolist(), default=df.columns.tolist()
 )
 
+if not currencies:
+    st.warning("Select at least one currency.")
+    st.stop()
+
+st.sidebar.header("Opening Balances")
+
+opening_balances = {}
+
+for currency in currencies:
+    default_balance = DEFAULT_OPENING_BALANCES.get(
+        currency,
+        100_000.0,
+    )
+
+    opening_balances[currency] = st.sidebar.number_input(
+        f"{currency} opening balance",
+        min_value=0.0,
+        value=float(default_balance),
+        step=max(float(default_balance) * 0.05, 1_000.0),
+    )
+
 
 # ---------------------------
 # Forecast Computation
@@ -76,6 +101,11 @@ forecasts = {}
 for ccy in currencies:
     forecasts[ccy] = forecast_currency(df, ccy, periods=horizon)
 
+projected_balances = project_balances(
+    opening_balances,
+    forecasts,
+)
+
 # Display forecast charts
 for ccy in currencies:
     st.write(f"### {ccy} Forecast")
@@ -85,6 +115,26 @@ for ccy in currencies:
 
     st.line_chart(combined)
 
+st.subheader("Projected Cash Balances")
+
+st.caption(
+    "Projected balances are calculated from the opening balance "
+    "plus cumulative forecast net cashflows."
+)
+
+st.line_chart(projected_balances)
+
+minimum_balances = pd.DataFrame(
+    {
+        "Minimum Projected Balance": projected_balances.min(),
+    }
+)
+
+st.dataframe(
+    minimum_balances.style.format(
+        {"Minimum Projected Balance": "{:,.2f}"}
+    )
+)
 
 # ---------------------------
 # Allocation Optimization
@@ -103,7 +153,13 @@ st.dataframe(alloc_df.style.format({"Allocation %": "{:.2f}"}))
 # Download Excel Output
 # ---------------------------
 buffer = BytesIO()
-save_to_excel(df, forecasts, allocations, filename=buffer)
+save_to_excel(
+    df,
+    forecasts,
+    allocations,
+    filename=buffer,
+    projected_balances=projected_balances,
+)
 buffer.seek(0)
 
 st.download_button(
