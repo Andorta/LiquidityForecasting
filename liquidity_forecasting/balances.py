@@ -12,6 +12,16 @@ DEFAULT_OPENING_BALANCES = {
     "AUD": 412_500.0,
 }
 
+DEFAULT_MINIMUM_BUFFERS = {
+    "EUR": 50_000.0,
+    "USD": 55_000.0,
+    "JPY": 7_500_000.0,
+    "BRL": 275_000.0,
+    "INR": 4_500_000.0,
+    "AUD": 82_500.0,
+}
+
+
 def project_balances(
     opening_balances: Mapping[str, float],
     forecast_cashflows: Mapping[str, pd.Series],
@@ -50,5 +60,45 @@ def project_balances(
 
     result = pd.DataFrame(projected)
     result.index.name = "Date"
+
+    return result
+
+
+def calculate_liquidity_shortfalls(
+    projected_balances: pd.DataFrame,
+    minimum_buffers: Mapping[str, float],
+) -> pd.DataFrame:
+    """Calculate funding needed to maintain each minimum balance."""
+    if projected_balances.empty:
+        raise ValueError("Projected balances cannot be empty.")
+
+    missing_currencies = [
+        currency
+        for currency in projected_balances.columns
+        if currency not in minimum_buffers
+    ]
+
+    if missing_currencies:
+        missing = ", ".join(missing_currencies)
+        raise ValueError(
+            f"Minimum buffers are missing for: {missing}."
+        )
+
+    shortfalls = {}
+
+    for currency in projected_balances.columns:
+        minimum_buffer = float(minimum_buffers[currency])
+
+        if minimum_buffer < 0:
+            raise ValueError(
+                f"Minimum buffer for '{currency}' cannot be negative."
+            )
+
+        shortfalls[currency] = (
+            minimum_buffer - projected_balances[currency]
+        ).clip(lower=0)
+
+    result = pd.DataFrame(shortfalls)
+    result.index.name = projected_balances.index.name
 
     return result

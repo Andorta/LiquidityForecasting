@@ -7,6 +7,7 @@ def save_to_excel(
     allocations,
     filename="output.xlsx",
     projected_balances=None,
+    liquidity_shortfalls=None,
 ):
     """Export liquidity analysis results to an Excel workbook."""
     with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
@@ -26,6 +27,12 @@ def save_to_excel(
             projected_balances.to_excel(
                 writer,
                 sheet_name="Projected_Balances",
+            )
+
+        if liquidity_shortfalls is not None:
+            liquidity_shortfalls.to_excel(
+                writer,
+                sheet_name="Liquidity_Shortfalls",
             )
 
         allocation_data = pd.DataFrame.from_dict(
