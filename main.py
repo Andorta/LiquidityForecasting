@@ -1,6 +1,8 @@
 from liquidity_forecasting.allocation import optimize_allocation
 from liquidity_forecasting.balances import (
+    DEFAULT_MINIMUM_BUFFERS,
     DEFAULT_OPENING_BALANCES,
+    calculate_liquidity_shortfalls,
     project_balances,
 )
 from liquidity_forecasting.data import (
@@ -33,9 +35,23 @@ def main():
         forecasts,
     )
 
+    minimum_buffers = {
+        currency: DEFAULT_MINIMUM_BUFFERS[currency]
+        for currency in forecasts
+    }
+
+    shortfalls = calculate_liquidity_shortfalls(
+        projected_balances,
+        minimum_buffers,
+    )
+
     print("Projected minimum balances:")
     for currency, balance in projected_balances.min().items():
         print(f"{currency}: {balance:,.2f}")
+
+    print("\nMaximum liquidity shortfalls:")
+    for currency, shortfall in shortfalls.max().items():
+        print(f"{currency}: {shortfall:,.2f}")
 
     allocations = optimize_allocation(forecasts)
 
@@ -44,11 +60,13 @@ def main():
         print(f"{currency}: {percentage * 100:.2f}%")
 
     save_to_excel(
-    cashflows,
-    forecasts,
-    allocations,
-    projected_balances=projected_balances,
-)
+        cashflows,
+        forecasts,
+        allocations,
+        projected_balances=projected_balances,
+        liquidity_shortfalls=shortfalls,
+    )
+
     plot_forecasts(cashflows, forecasts)
 
 
