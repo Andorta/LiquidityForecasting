@@ -1,10 +1,12 @@
 import pandas as pd
 
+from liquidity_forecasting.fx import BASE_CURRENCY
+
 
 def save_to_excel(
     cashflows,
     forecasts,
-    allocations,
+    funding_recommendations,
     filename="output.xlsx",
     projected_balances=None,
     liquidity_shortfalls=None,
@@ -35,13 +37,15 @@ def save_to_excel(
                 sheet_name="Liquidity_Shortfalls",
             )
 
-        allocation_data = pd.DataFrame.from_dict(
-            allocations,
+        funding_data = pd.DataFrame.from_dict(
+            funding_recommendations,
             orient="index",
-            columns=["Allocation"],
+            columns=[
+                f"Recommended Funding ({BASE_CURRENCY})"
+            ],
         )
-        allocation_data["Allocation"] *= 100
-        allocation_data.to_excel(
+        funding_data.index.name = "Currency"
+        funding_data.to_excel(
             writer,
-            sheet_name="Allocation",
+            sheet_name="Funding_Recommendations",
         )

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Dict
+from typing import Dict, Mapping
 
 
 def optimize_allocation(forecasts: Dict[str, pd.Series]) -> Dict[str, float]:
@@ -31,3 +31,49 @@ def optimize_allocation(forecasts: Dict[str, pd.Series]) -> Dict[str, float]:
 
     allocations = {ccy: total / grand_total for ccy, total in totals.items()}
     return allocations
+
+def allocate_funds_by_shortfall(
+    shortfalls_in_base_currency: Mapping[str, float],
+    available_funds: float,
+) -> Dict[str, float]:
+    """Allocate available funds proportionally to liquidity shortfalls."""
+    if not shortfalls_in_base_currency:
+        raise ValueError("At least one liquidity shortfall is required.")
+
+    if available_funds < 0:
+        raise ValueError("Available funds cannot be negative.")
+
+    normalized_shortfalls = {
+        currency: float(shortfall)
+        for currency, shortfall in shortfalls_in_base_currency.items()
+    }
+
+    negative_currencies = [
+        currency
+        for currency, shortfall in normalized_shortfalls.items()
+        if shortfall < 0
+    ]
+
+    if negative_currencies:
+        invalid = ", ".join(negative_currencies)
+        raise ValueError(
+            f"Liquidity shortfalls cannot be negative for: {invalid}."
+        )
+
+    total_shortfall = sum(normalized_shortfalls.values())
+
+    if total_shortfall == 0 or available_funds == 0:
+        return {
+            currency: 0.0
+            for currency in normalized_shortfalls
+        }
+
+    funding_ratio = min(
+        1.0,
+        float(available_funds) / total_shortfall,
+    )
+
+    return {
+        currency: shortfall * funding_ratio
+        for currency, shortfall in normalized_shortfalls.items()
+    }
