@@ -21,6 +21,10 @@ from liquidity_forecasting.fx import (
     DEFAULT_FX_TO_EUR,
     convert_frame_to_base_currency,
 )
+from liquidity_forecasting.evaluation import (
+    rolling_backtest_currency,
+    summarize_backtest_results,
+)
 from liquidity_forecasting.export import save_to_excel
 from liquidity_forecasting.model import forecast_currency
 from liquidity_forecasting.validation import validate_cashflow_data
@@ -30,6 +34,16 @@ st.set_page_config(
     page_title="Liquidity Forecasting Dashboard",
     layout="wide",
 )
+@st.cache_data(show_spinner=False)
+def run_cached_backtest(data, currency, horizon, folds):
+    return rolling_backtest_currency(
+        data,
+        currency,
+        forecast_currency,
+        horizon=horizon,
+        folds=folds,
+        season_length=7,
+    )
 
 st.title("Liquidity Forecasting & Fund Allocation Dashboard")
 
@@ -226,6 +240,61 @@ for currency in currencies:
 
     st.line_chart(combined)
 
+st.subheader("Forecast Model Evaluation")
+
+evaluation_currency = st.selectbox(
+    "Currency to evaluate",
+    currencies,
+)
+
+if st.button("Run backtest"):
+    with st.spinner(
+        f"Backtesting {evaluation_currency}. "
+        "This may take a little while..."
+    ):
+        backtest_results = run_cached_backtest(
+            df,
+            evaluation_currency,
+            horizon=7,
+            folds=3,
+        )
+
+    backtest_summary = summarize_backtest_results(
+        backtest_results
+    )
+
+    st.dataframe(
+        backtest_summary.style.format(
+            {
+                "MAE": "{:,.2f}",
+                "MASE": "{:.3f}",
+            }
+        )
+    )
+
+    sarimax_mase = backtest_summary.loc[
+        backtest_summary["Model"] == "SARIMAX",
+        "MASE",
+    ].iloc[0]
+
+    naive_mase = backtest_summary.loc[
+        backtest_summary["Model"] == "Seasonal Naive",
+        "MASE",
+    ].iloc[0]
+
+    if sarimax_mase < naive_mase:
+        st.success(
+            "SARIMAX outperformed the seasonal-naive baseline "
+            "during this backtest."
+        )
+    else:
+        st.warning(
+            "SARIMAX did not outperform the seasonal-naive "
+            "baseline. The simpler model may be preferable."
+        )
+
+    with st.expander("View individual backtest folds"):
+        st.dataframe(backtest_results)
 
 # Projected balances
 st.subheader("Projected Cash Balances")

@@ -32,14 +32,14 @@ def test_excel_export_contains_expected_sheets():
         {"EUR": [1_020.0, 1_010.0]},
         index=forecast_index,
     )
-    allocations = {"EUR": 1.0}
+    funding_recommendations = {"EUR": 1_000.0}
 
     output = BytesIO()
 
     save_to_excel(
         cashflows,
         forecasts,
-        allocations,
+        funding_recommendations,
         filename=output,
         projected_balances=projected_balances,
     )
@@ -54,4 +54,4 @@ def test_excel_export_contains_expected_sheets():
     assert "Historical_Cashflows" in workbook_xml
     assert "Forecasts" in workbook_xml
     assert "Projected_Balances" in workbook_xml
-    assert "Allocation" in workbook_xml
+    assert "Funding_Recommendations" in workbook_xml
