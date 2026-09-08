@@ -3,7 +3,9 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-from liquidity_forecasting.allocation import optimize_allocation
+from liquidity_forecasting.allocation import (
+    allocate_funds_by_shortfall,
+)
 from liquidity_forecasting.balances import (
     DEFAULT_MINIMUM_BUFFERS,
     DEFAULT_OPENING_BALANCES,
@@ -13,6 +15,11 @@ from liquidity_forecasting.balances import (
 from liquidity_forecasting.data import (
     generate_sample_cashflows,
     preprocess_data,
+)
+from liquidity_forecasting.fx import (
+    BASE_CURRENCY,
+    DEFAULT_FX_TO_EUR,
+    convert_frame_to_base_currency,
 )
 from liquidity_forecasting.export import save_to_excel
 from liquidity_forecasting.model import forecast_currency
@@ -121,6 +128,25 @@ for currency in currencies:
         currency,
         20_000.0,
     )
+st.sidebar.header(f"FX Rates to {BASE_CURRENCY}")
+
+st.sidebar.caption(
+    f"Each rate represents the value of one unit "
+    f"of local currency in {BASE_CURRENCY}."
+)
+
+fx_rates = {}
+
+for currency in currencies:
+    default_rate = DEFAULT_FX_TO_EUR.get(currency, 1.0)
+
+    fx_rates[currency] = st.sidebar.number_input(
+        f"1 {currency} in {BASE_CURRENCY}",
+        min_value=0.000001,
+        value=float(default_rate),
+        format="%.6f",
+        disabled=(currency == BASE_CURRENCY),
+    )
 
     minimum_buffers[currency] = st.sidebar.number_input(
         f"{currency} minimum buffer",
@@ -128,6 +154,14 @@ for currency in currencies:
         value=float(default_buffer),
         step=max(float(default_buffer) * 0.05, 500.0),
     )
+st.sidebar.header("Central Funding")
+
+available_funds = st.sidebar.number_input(
+    f"Available central funds ({BASE_CURRENCY})",
+    min_value=0.0,
+    value=100_000.0,
+    step=5_000.0,
+)
 
 
 # Forecast computation
@@ -152,6 +186,34 @@ shortfalls = calculate_liquidity_shortfalls(
     minimum_buffers,
 )
 
+shortfalls_in_base_currency = convert_frame_to_base_currency(
+    shortfalls,
+    fx_rates,
+)
+
+maximum_shortfalls_in_base = (
+    shortfalls_in_base_currency.max()
+)
+funding_recommendations = allocate_funds_by_shortfall(
+    maximum_shortfalls_in_base.to_dict(),
+    available_funds,
+)
+
+recommended_funding = pd.Series(
+    funding_recommendations,
+    dtype=float,
+)
+
+remaining_shortfalls = (
+    maximum_shortfalls_in_base - recommended_funding
+).clip(lower=0)
+
+recommended_funding_local = pd.Series(
+    {
+        currency: amount / fx_rates[currency]
+        for currency, amount in funding_recommendations.items()
+    }
+)
 
 # Forecast charts
 for currency in currencies:
@@ -180,7 +242,10 @@ liquidity_summary = pd.DataFrame(
         "Opening Balance": pd.Series(opening_balances),
         "Minimum Buffer": pd.Series(minimum_buffers),
         "Minimum Projected Balance": projected_balances.min(),
-        "Maximum Shortfall": shortfalls.max(),
+        "Maximum Shortfall (Local)": shortfalls.max(),
+        f"Maximum Shortfall ({BASE_CURRENCY})": (
+            maximum_shortfalls_in_base
+        ),
     }
 )
 
@@ -189,7 +254,15 @@ st.dataframe(
 )
 
 currencies_at_risk = liquidity_summary[
-    liquidity_summary["Maximum Shortfall"] > 0
+    liquidity_summary["Maximum Shortfall (Local)"] > 0
+].index.tolist()
+
+st.dataframe(
+    liquidity_summary.style.format("{:,.2f}")
+)
+
+currencies_at_risk = liquidity_summary[
+    liquidity_summary["Maximum Shortfall (Local)"] > 0
 ].index.tolist()
 
 if currencies_at_risk:
@@ -205,30 +278,58 @@ else:
 
 
 # Temporary allocation heuristic
-st.subheader("Current Heuristic Allocation")
+# Funding recommendations
+st.subheader("Funding Recommendations")
 
 st.caption(
-    "This allocation is an interim heuristic. It will be replaced "
-    "with FX-normalized constrained optimization."
+    f"Recommendations are allocated according to maximum "
+    f"liquidity shortfalls after conversion to {BASE_CURRENCY}."
 )
 
-allocations = optimize_allocation(forecasts)
-
-allocation_data = pd.DataFrame.from_dict(
-    allocations,
-    orient="index",
-    columns=["Allocation"],
-)
-allocation_data["Allocation %"] = (
-    allocation_data["Allocation"] * 100
+funding_summary = pd.DataFrame(
+    {
+        f"Maximum Shortfall ({BASE_CURRENCY})": (
+            maximum_shortfalls_in_base
+        ),
+        f"Recommended Funding ({BASE_CURRENCY})": (
+            recommended_funding
+        ),
+        "Recommended Funding (Local)": (
+            recommended_funding_local
+        ),
+        f"Remaining Shortfall ({BASE_CURRENCY})": (
+            remaining_shortfalls
+        ),
+    }
 )
 
 st.dataframe(
-    allocation_data.style.format(
-        {"Allocation %": "{:.2f}"}
-    )
+    funding_summary.style.format("{:,.2f}")
 )
 
+total_required = maximum_shortfalls_in_base.sum()
+total_recommended = recommended_funding.sum()
+total_remaining = remaining_shortfalls.sum()
+
+metric_columns = st.columns(3)
+
+metric_columns[0].metric(
+    f"Required ({BASE_CURRENCY})",
+    f"{total_required:,.2f}",
+)
+metric_columns[1].metric(
+    f"Recommended ({BASE_CURRENCY})",
+    f"{total_recommended:,.2f}",
+)
+metric_columns[2].metric(
+    f"Unfunded ({BASE_CURRENCY})",
+    f"{total_remaining:,.2f}",
+)
+
+if total_remaining > 0:
+    st.warning(
+        "Available central funds do not cover all projected shortfalls."
+    )
 
 # Excel download
 buffer = BytesIO()
@@ -236,7 +337,7 @@ buffer = BytesIO()
 save_to_excel(
     df,
     forecasts,
-    allocations,
+    funding_recommendations,
     filename=buffer,
     projected_balances=projected_balances,
 )
