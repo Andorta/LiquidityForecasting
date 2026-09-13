@@ -255,17 +255,16 @@ forecasts = {
     for currency, result in forecast_results.items()
 }
 
-non_converged_currencies = [
+fallback_currencies = [
     currency
     for currency, result in forecast_results.items()
-    if not result.converged
+    if result.model_name != "SARIMAX"
 ]
 
-if non_converged_currencies:
+if fallback_currencies:
     st.warning(
-        "SARIMAX did not fully converge for: "
-        + ", ".join(non_converged_currencies)
-        + ". Treat these forecasts with additional caution."
+        "Seasonal-naive fallback used for: "
+        + ", ".join(fallback_currencies)
     )
 
 projected_balances = project_balances(
@@ -330,7 +329,7 @@ for currency in currencies:
     axis.plot(
         result.mean.index,
         result.mean.values,
-        label="Forecast",
+        label=f"{result.model_name} forecast",
         linestyle="--",
     )
     axis.fill_between(
@@ -349,6 +348,8 @@ for currency in currencies:
     st.pyplot(figure)
     plt.close(figure)
 
+
+# Forecast evaluation
 
 # Forecast evaluation
 st.subheader("Forecast Model Evaluation")
@@ -383,8 +384,8 @@ if st.button("Run backtest"):
         )
     )
 
-    sarimax_mase = backtest_summary.loc[
-        backtest_summary["Model"] == "SARIMAX",
+    pipeline_mase = backtest_summary.loc[
+        backtest_summary["Model"] == "Forecast Pipeline",
         "MASE",
     ].iloc[0]
 
@@ -393,20 +394,20 @@ if st.button("Run backtest"):
         "MASE",
     ].iloc[0]
 
-    if sarimax_mase < naive_mase:
+    if pipeline_mase < naive_mase:
         st.success(
-            "SARIMAX outperformed the seasonal-naive baseline "
-            "during this backtest."
+            "The forecasting pipeline outperformed the "
+            "seasonal-naive baseline during this backtest."
         )
     else:
         st.warning(
-            "SARIMAX did not outperform the seasonal-naive "
-            "baseline. The simpler model may be preferable."
+            "The forecasting pipeline did not outperform the "
+            "seasonal-naive baseline. The simpler model may "
+            "be preferable."
         )
 
     with st.expander("View individual backtest folds"):
         st.dataframe(backtest_results)
-
 
 # Projected balances
 st.subheader("Projected Cash Balances")
