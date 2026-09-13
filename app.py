@@ -1,11 +1,10 @@
 from io import BytesIO
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-from liquidity_forecasting.allocation import (
-    allocate_funds_by_shortfall,
-)
+from liquidity_forecasting.allocation import allocate_funds_by_shortfall
 from liquidity_forecasting.balances import (
     DEFAULT_MINIMUM_BUFFERS,
     DEFAULT_OPENING_BALANCES,
@@ -16,17 +15,20 @@ from liquidity_forecasting.data import (
     generate_sample_cashflows,
     preprocess_data,
 )
-from liquidity_forecasting.fx import (
-    BASE_CURRENCY,
-    DEFAULT_FX_TO_EUR,
-    convert_frame_to_base_currency,
-)
 from liquidity_forecasting.evaluation import (
     rolling_backtest_currency,
     summarize_backtest_results,
 )
 from liquidity_forecasting.export import save_to_excel
-from liquidity_forecasting.model import forecast_currency
+from liquidity_forecasting.fx import (
+    BASE_CURRENCY,
+    DEFAULT_FX_TO_EUR,
+    convert_frame_to_base_currency,
+)
+from liquidity_forecasting.model import (
+    forecast_currency,
+    forecast_currency_with_intervals,
+)
 from liquidity_forecasting.validation import validate_cashflow_data
 
 
@@ -34,6 +36,8 @@ st.set_page_config(
     page_title="Liquidity Forecasting Dashboard",
     layout="wide",
 )
+
+
 @st.cache_data(show_spinner=False)
 def run_cached_backtest(data, currency, horizon, folds):
     return rolling_backtest_currency(
@@ -44,6 +48,19 @@ def run_cached_backtest(data, currency, horizon, folds):
         folds=folds,
         season_length=7,
     )
+
+
+@st.cache_data(show_spinner=False)
+def run_cached_forecasts(data, selected_currencies, horizon):
+    return {
+        currency: forecast_currency_with_intervals(
+            data,
+            currency,
+            periods=horizon,
+        )
+        for currency in selected_currencies
+    }
+
 
 st.title("Liquidity Forecasting & Fund Allocation Dashboard")
 
@@ -142,10 +159,20 @@ for currency in currencies:
         currency,
         20_000.0,
     )
+
+    minimum_buffers[currency] = st.sidebar.number_input(
+        f"{currency} minimum buffer",
+        min_value=0.0,
+        value=float(default_buffer),
+        step=max(float(default_buffer) * 0.05, 500.0),
+    )
+
+
+# FX rates
 st.sidebar.header(f"FX Rates to {BASE_CURRENCY}")
 
 st.sidebar.caption(
-    f"Each rate represents the value of one unit "
+    "Each rate represents the value of one unit "
     f"of local currency in {BASE_CURRENCY}."
 )
 
@@ -162,12 +189,8 @@ for currency in currencies:
         disabled=(currency == BASE_CURRENCY),
     )
 
-    minimum_buffers[currency] = st.sidebar.number_input(
-        f"{currency} minimum buffer",
-        min_value=0.0,
-        value=float(default_buffer),
-        step=max(float(default_buffer) * 0.05, 500.0),
-    )
+
+# Central funding
 st.sidebar.header("Central Funding")
 
 available_funds = st.sidebar.number_input(
@@ -181,14 +204,30 @@ available_funds = st.sidebar.number_input(
 # Forecast computation
 st.subheader(f"Forecasts for Next {horizon} Days")
 
-forecasts = {
-    currency: forecast_currency(
+with st.spinner("Fitting forecasting models..."):
+    forecast_results = run_cached_forecasts(
         df,
-        currency,
-        periods=horizon,
+        tuple(currencies),
+        horizon,
     )
-    for currency in currencies
+
+forecasts = {
+    currency: result.mean
+    for currency, result in forecast_results.items()
 }
+
+non_converged_currencies = [
+    currency
+    for currency, result in forecast_results.items()
+    if not result.converged
+]
+
+if non_converged_currencies:
+    st.warning(
+        "SARIMAX did not fully converge for: "
+        + ", ".join(non_converged_currencies)
+        + ". Treat these forecasts with additional caution."
+    )
 
 projected_balances = project_balances(
     opening_balances,
@@ -205,9 +244,8 @@ shortfalls_in_base_currency = convert_frame_to_base_currency(
     fx_rates,
 )
 
-maximum_shortfalls_in_base = (
-    shortfalls_in_base_currency.max()
-)
+maximum_shortfalls_in_base = shortfalls_in_base_currency.max()
+
 funding_recommendations = allocate_funds_by_shortfall(
     maximum_shortfalls_in_base.to_dict(),
     available_funds,
@@ -229,17 +267,45 @@ recommended_funding_local = pd.Series(
     }
 )
 
+
 # Forecast charts
 for currency in currencies:
     st.write(f"### {currency} Forecast")
 
     historical = df[currency].iloc[-60:]
-    combined = pd.concat(
-        [historical, forecasts[currency]]
+    result = forecast_results[currency]
+
+    figure, axis = plt.subplots(figsize=(10, 4))
+
+    axis.plot(
+        historical.index,
+        historical.values,
+        label="Historical",
+    )
+    axis.plot(
+        result.mean.index,
+        result.mean.values,
+        label="Forecast",
+        linestyle="--",
+    )
+    axis.fill_between(
+        result.mean.index,
+        result.lower.values,
+        result.upper.values,
+        alpha=0.2,
+        label="95% prediction interval",
     )
 
-    st.line_chart(combined)
+    axis.set_xlabel("Date")
+    axis.set_ylabel("Daily net cashflow (local currency)")
+    axis.legend()
+    axis.grid(alpha=0.3)
 
+    st.pyplot(figure)
+    plt.close(figure)
+
+
+# Forecast evaluation
 st.subheader("Forecast Model Evaluation")
 
 evaluation_currency = st.selectbox(
@@ -296,6 +362,7 @@ if st.button("Run backtest"):
     with st.expander("View individual backtest folds"):
         st.dataframe(backtest_results)
 
+
 # Projected balances
 st.subheader("Projected Cash Balances")
 
@@ -326,14 +393,6 @@ currencies_at_risk = liquidity_summary[
     liquidity_summary["Maximum Shortfall (Local)"] > 0
 ].index.tolist()
 
-st.dataframe(
-    liquidity_summary.style.format("{:,.2f}")
-)
-
-currencies_at_risk = liquidity_summary[
-    liquidity_summary["Maximum Shortfall (Local)"] > 0
-].index.tolist()
-
 if currencies_at_risk:
     st.warning(
         "Projected buffer breach for: "
@@ -346,12 +405,11 @@ else:
     )
 
 
-# Temporary allocation heuristic
 # Funding recommendations
 st.subheader("Funding Recommendations")
 
 st.caption(
-    f"Recommendations are allocated according to maximum "
+    "Recommendations are allocated according to maximum "
     f"liquidity shortfalls after conversion to {BASE_CURRENCY}."
 )
 
@@ -400,6 +458,7 @@ if total_remaining > 0:
         "Available central funds do not cover all projected shortfalls."
     )
 
+
 # Excel download
 buffer = BytesIO()
 
@@ -409,6 +468,7 @@ save_to_excel(
     funding_recommendations,
     filename=buffer,
     projected_balances=projected_balances,
+    liquidity_shortfalls=shortfalls,
 )
 
 buffer.seek(0)
