@@ -1,5 +1,7 @@
 from liquidity_forecasting.allocation import (
-    allocate_funds_by_shortfall,
+    DEFAULT_PRIORITY_WEIGHTS,
+    DEFAULT_TRANSFER_COST_RATES,
+    optimize_funding_allocation,
 )
 from liquidity_forecasting.balances import (
     DEFAULT_MINIMUM_BUFFERS,
@@ -69,6 +71,16 @@ def main():
         for currency in forecasts
     }
 
+    transfer_cost_rates = {
+        currency: DEFAULT_TRANSFER_COST_RATES[currency]
+        for currency in forecasts
+    }
+
+    priority_weights = {
+        currency: DEFAULT_PRIORITY_WEIGHTS[currency]
+        for currency in forecasts
+    }
+
     projected_balances = project_balances(
         opening_balances,
         forecasts,
@@ -90,9 +102,11 @@ def main():
 
     available_funds = 100_000.0
 
-    funding_recommendations = allocate_funds_by_shortfall(
+    funding_recommendations = optimize_funding_allocation(
         maximum_shortfalls_in_base.to_dict(),
         available_funds,
+        transfer_cost_rates,
+        priority_weights,
     )
 
     print("Projected minimum balances:")
@@ -111,6 +125,17 @@ def main():
     )
     for currency, amount in funding_recommendations.items():
         print(f"{currency}: {amount:,.2f}")
+
+    estimated_transfer_cost = sum(
+        funding_recommendations[currency]
+        * transfer_cost_rates[currency]
+        for currency in funding_recommendations
+    )
+
+    print(
+        f"\nEstimated transfer cost in {BASE_CURRENCY}: "
+        f"{estimated_transfer_cost:,.2f}"
+    )
 
     save_to_excel(
         cashflows,
