@@ -2,7 +2,6 @@ from typing import Mapping
 
 import pandas as pd
 
-
 BASE_CURRENCY = "EUR"
 
 DEFAULT_FX_TO_EUR = {
@@ -24,9 +23,7 @@ def convert_frame_to_base_currency(
         raise ValueError("Currency values cannot be empty.")
 
     missing_currencies = [
-        currency
-        for currency in values.columns
-        if currency not in fx_rates
+        currency for currency in values.columns if currency not in fx_rates
     ]
 
     if missing_currencies:
@@ -34,22 +31,15 @@ def convert_frame_to_base_currency(
         raise ValueError(f"FX rates are missing for: {missing}.")
 
     invalid_currencies = [
-        currency
-        for currency in values.columns
-        if float(fx_rates[currency]) <= 0
+        currency for currency in values.columns if float(fx_rates[currency]) <= 0
     ]
 
     if invalid_currencies:
         invalid = ", ".join(invalid_currencies)
-        raise ValueError(
-            f"FX rates must be positive for: {invalid}."
-        )
+        raise ValueError(f"FX rates must be positive for: {invalid}.")
 
     rates = pd.Series(
-        {
-            currency: float(fx_rates[currency])
-            for currency in values.columns
-        }
+        {currency: float(fx_rates[currency]) for currency in values.columns}
     )
 
     converted = values.mul(rates, axis="columns")

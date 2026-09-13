@@ -104,7 +104,7 @@ def test_rolling_backtest_returns_both_models_for_each_fold():
 
     assert len(result) == 4
     assert set(result["Model"]) == {
-        "SARIMAX",
+        "Forecast Pipeline",
         "Seasonal Naive",
     }
     assert set(result["Fold"]) == {1, 2}
@@ -129,6 +129,7 @@ def test_rolling_backtest_rejects_insufficient_history():
             folds=2,
             season_length=7,
         )
+
 
 def test_summarize_backtest_results():
     results = pd.DataFrame(

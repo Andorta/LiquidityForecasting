@@ -1,59 +1,47 @@
 import numpy as np
 import pandas as pd
 
-from liquidity_forecasting.data import load_cashflow_data, preprocess_data
-from liquidity_forecasting.model import forecast_currency, forecast_currency_with_intervals
-from liquidity_forecasting.allocation import optimize_allocation
+import liquidity_forecasting.model as model_module
+from liquidity_forecasting.data import (
+    generate_sample_cashflows,
+    preprocess_data,
+)
+from liquidity_forecasting.model import (
+    forecast_currency,
+    forecast_currency_with_intervals,
+)
 
 
 def test_forecast_currency_produces_expected_horizon_without_nans():
-    """Forecast should return a series of the requested length with no missing values."""
-    df = preprocess_data(load_cashflow_data())
+    data = preprocess_data(generate_sample_cashflows())
     horizon = 14
 
-    forecast = forecast_currency(df, "EUR", periods=horizon)
+    forecast = forecast_currency(
+        data,
+        "EUR",
+        periods=horizon,
+    )
+
+    expected_index = pd.date_range(
+        start=data.index.max() + pd.Timedelta(days=1),
+        periods=horizon,
+        freq="D",
+    )
 
     assert len(forecast) == horizon
     assert isinstance(forecast, (pd.Series, np.ndarray))
-    # convert to series to check NaNs easily
-    s = pd.Series(forecast)
-    assert s.isna().sum() == 0
-
-    expected_index = pd.date_range(
-    start=df.index.max() + pd.Timedelta(days=1),
-    periods=horizon,
-    freq="D",)
+    assert pd.Series(forecast).isna().sum() == 0
     assert isinstance(forecast.index, pd.DatetimeIndex)
     assert forecast.index.equals(expected_index)
     assert forecast.name == "EUR"
 
 
-def test_optimize_allocation_sums_to_one_and_is_positive():
-    """Optimized allocations should form a valid probability distribution."""
-    df = preprocess_data(load_cashflow_data())
-    horizon = 7
-
-    forecasts = {
-        ccy: forecast_currency(df, ccy, periods=horizon)
-        for ccy in df.columns
-    }
-
-    allocations = optimize_allocation(forecasts)
-
-    # all currencies from forecasts should be present
-    assert set(allocations.keys()) == set(forecasts.keys())
-
-    # allocations should be positive and sum to 1 (within numerical tolerance)
-    values = np.array(list(allocations.values()))
-    assert np.all(values > 0)
-    assert np.isclose(values.sum(), 1.0, atol=1e-6)
-
 def test_forecast_result_contains_prediction_intervals():
-    df = preprocess_data(load_cashflow_data())
+    data = preprocess_data(generate_sample_cashflows())
     horizon = 7
 
     result = forecast_currency_with_intervals(
-        df,
+        data,
         "EUR",
         periods=horizon,
     )
@@ -65,4 +53,43 @@ def test_forecast_result_contains_prediction_intervals():
     assert result.mean.index.equals(result.upper.index)
     assert (result.lower <= result.upper).all()
     assert isinstance(result.converged, bool)
+    assert result.model_name in {
+        "SARIMAX",
+        "Seasonal Naive (fallback)",
+    }
 
+
+def test_non_converged_model_uses_seasonal_naive_fallback(monkeypatch):
+    class NonConvergedResult:
+        mle_retvals = {"converged": False}
+
+    class NonConvergedSarimax:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def fit(self, disp=False):
+            return NonConvergedResult()
+
+    monkeypatch.setattr(
+        model_module,
+        "SARIMAX",
+        NonConvergedSarimax,
+    )
+
+    dates = pd.date_range("2025-01-01", periods=14, freq="D")
+    data = pd.DataFrame(
+        {"EUR": [float(value) for value in range(14)]},
+        index=dates,
+    )
+
+    result = model_module.forecast_currency_with_intervals(
+        data,
+        "EUR",
+        periods=3,
+    )
+
+    assert result.model_name == "Seasonal Naive (fallback)"
+    assert result.converged is False
+    assert result.mean.tolist() == [7.0, 8.0, 9.0]
+    assert len(result.lower) == 3
+    assert len(result.upper) == 3

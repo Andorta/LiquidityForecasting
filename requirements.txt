@@ -4,5 +4,5 @@ matplotlib
 statsmodels
 streamlit
 xlsxwriter
-pytest
 scipy
+openpyxl

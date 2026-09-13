@@ -26,9 +26,7 @@ def plot_forecasts(
         forecasts.items(),
     ):
         if currency not in historical_data.columns:
-            raise ValueError(
-                f"Currency '{currency}' is missing from historical data."
-            )
+            raise ValueError(f"Currency '{currency}' is missing from historical data.")
 
         historical_series = historical_data[currency].tail(90)
         forecast_series = pd.Series(forecast).copy()

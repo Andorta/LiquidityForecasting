@@ -23,8 +23,7 @@ def validate_cashflow_data(
 
     if len(data) < min_observations:
         raise ValueError(
-            f"Cashflow data must contain at least "
-            f"{min_observations} observations."
+            f"Cashflow data must contain at least {min_observations} observations."
         )
 
     if len(data.columns) == 0:
@@ -40,9 +39,7 @@ def validate_cashflow_data(
     missing_columns = data.columns[data.isna().all()].tolist()
     if missing_columns:
         columns = ", ".join(map(str, missing_columns))
-        raise ValueError(
-            f"Cashflow columns cannot be entirely empty: {columns}."
-        )
+        raise ValueError(f"Cashflow columns cannot be entirely empty: {columns}.")
 
     if data.isna().any().any():
         raise ValueError(
