@@ -4,7 +4,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-from liquidity_forecasting.allocation import allocate_funds_by_shortfall
+from liquidity_forecasting.allocation import (
+    DEFAULT_PRIORITY_WEIGHTS,
+    DEFAULT_TRANSFER_COST_RATES,
+    optimize_funding_allocation,
+)
 from liquidity_forecasting.balances import (
     DEFAULT_MINIMUM_BUFFERS,
     DEFAULT_OPENING_BALANCES,
@@ -29,15 +33,7 @@ from liquidity_forecasting.model import (
     forecast_currency,
     forecast_currency_with_intervals,
 )
-
-from liquidity_forecasting.allocation import (
-    DEFAULT_PRIORITY_WEIGHTS,
-    DEFAULT_TRANSFER_COST_RATES,
-    optimize_funding_allocation,
-)
-
 from liquidity_forecasting.validation import validate_cashflow_data
-
 
 st.set_page_config(
     page_title="Liquidity Forecasting Dashboard",
@@ -179,8 +175,7 @@ for currency in currencies:
 st.sidebar.header(f"FX Rates to {BASE_CURRENCY}")
 
 st.sidebar.caption(
-    "Each rate represents the value of one unit "
-    f"of local currency in {BASE_CURRENCY}."
+    f"Each rate represents the value of one unit of local currency in {BASE_CURRENCY}."
 )
 
 fx_rates = {}
@@ -229,9 +224,7 @@ with st.sidebar.expander("Optimization Settings"):
             format="%.3f",
         )
 
-        transfer_cost_rates[currency] = (
-            cost_percentage / 100
-        )
+        transfer_cost_rates[currency] = cost_percentage / 100
 
         priority_weights[currency] = st.number_input(
             f"{currency} priority weight",
@@ -250,10 +243,7 @@ with st.spinner("Fitting forecasting models..."):
         horizon,
     )
 
-forecasts = {
-    currency: result.mean
-    for currency, result in forecast_results.items()
-}
+forecasts = {currency: result.mean for currency, result in forecast_results.items()}
 
 fallback_currencies = [
     currency
@@ -262,10 +252,7 @@ fallback_currencies = [
 ]
 
 if fallback_currencies:
-    st.warning(
-        "Seasonal-naive fallback used for: "
-        + ", ".join(fallback_currencies)
-    )
+    st.warning("Seasonal-naive fallback used for: " + ", ".join(fallback_currencies))
 
 projected_balances = project_balances(
     opening_balances,
@@ -296,9 +283,7 @@ recommended_funding = pd.Series(
     dtype=float,
 )
 
-remaining_shortfalls = (
-    maximum_shortfalls_in_base - recommended_funding
-).clip(lower=0)
+remaining_shortfalls = (maximum_shortfalls_in_base - recommended_funding).clip(lower=0)
 
 recommended_funding_local = pd.Series(
     {
@@ -307,9 +292,7 @@ recommended_funding_local = pd.Series(
     }
 )
 
-estimated_transfer_costs = recommended_funding * pd.Series(
-    transfer_cost_rates
-)
+estimated_transfer_costs = recommended_funding * pd.Series(transfer_cost_rates)
 
 
 # Forecast charts
@@ -361,8 +344,7 @@ evaluation_currency = st.selectbox(
 
 if st.button("Run backtest"):
     with st.spinner(
-        f"Backtesting {evaluation_currency}. "
-        "This may take a little while..."
+        f"Backtesting {evaluation_currency}. This may take a little while..."
     ):
         backtest_results = run_cached_backtest(
             df,
@@ -371,9 +353,7 @@ if st.button("Run backtest"):
             folds=3,
         )
 
-    backtest_summary = summarize_backtest_results(
-        backtest_results
-    )
+    backtest_summary = summarize_backtest_results(backtest_results)
 
     st.dataframe(
         backtest_summary.style.format(
@@ -425,30 +405,20 @@ liquidity_summary = pd.DataFrame(
         "Minimum Buffer": pd.Series(minimum_buffers),
         "Minimum Projected Balance": projected_balances.min(),
         "Maximum Shortfall (Local)": shortfalls.max(),
-        f"Maximum Shortfall ({BASE_CURRENCY})": (
-            maximum_shortfalls_in_base
-        ),
+        f"Maximum Shortfall ({BASE_CURRENCY})": (maximum_shortfalls_in_base),
     }
 )
 
-st.dataframe(
-    liquidity_summary.style.format("{:,.2f}")
-)
+st.dataframe(liquidity_summary.style.format("{:,.2f}"))
 
 currencies_at_risk = liquidity_summary[
     liquidity_summary["Maximum Shortfall (Local)"] > 0
 ].index.tolist()
 
 if currencies_at_risk:
-    st.warning(
-        "Projected buffer breach for: "
-        + ", ".join(currencies_at_risk)
-    )
+    st.warning("Projected buffer breach for: " + ", ".join(currencies_at_risk))
 else:
-    st.success(
-        "No projected liquidity-buffer breaches "
-        "during the forecast period."
-    )
+    st.success("No projected liquidity-buffer breaches during the forecast period.")
 
 
 # Funding recommendations
@@ -461,31 +431,17 @@ st.caption(
 
 funding_summary = pd.DataFrame(
     {
-        f"Maximum Shortfall ({BASE_CURRENCY})": (
-            maximum_shortfalls_in_base
-        ),
-        f"Recommended Funding ({BASE_CURRENCY})": (
-            recommended_funding
-        ),
-        "Recommended Funding (Local)": (
-            recommended_funding_local
-        ),
-        f"Remaining Shortfall ({BASE_CURRENCY})": (
-            remaining_shortfalls
-        ),
-                "Transfer Cost (%)": (
-            pd.Series(transfer_cost_rates) * 100
-        ),
+        f"Maximum Shortfall ({BASE_CURRENCY})": (maximum_shortfalls_in_base),
+        f"Recommended Funding ({BASE_CURRENCY})": (recommended_funding),
+        "Recommended Funding (Local)": (recommended_funding_local),
+        f"Remaining Shortfall ({BASE_CURRENCY})": (remaining_shortfalls),
+        "Transfer Cost (%)": (pd.Series(transfer_cost_rates) * 100),
         "Priority Weight": pd.Series(priority_weights),
-        f"Estimated Transfer Cost ({BASE_CURRENCY})": (
-            estimated_transfer_costs
-        ),
+        f"Estimated Transfer Cost ({BASE_CURRENCY})": (estimated_transfer_costs),
     }
 )
 
-st.dataframe(
-    funding_summary.style.format("{:,.2f}")
-)
+st.dataframe(funding_summary.style.format("{:,.2f}"))
 
 total_required = maximum_shortfalls_in_base.sum()
 total_recommended = recommended_funding.sum()
@@ -511,9 +467,7 @@ metric_columns[3].metric(
 )
 
 if total_remaining > 0:
-    st.warning(
-        "Available central funds do not cover all projected shortfalls."
-    )
+    st.warning("Available central funds do not cover all projected shortfalls.")
 
 
 # Excel download
@@ -534,8 +488,5 @@ st.download_button(
     label="Download Excel Output",
     data=buffer,
     file_name="liquidity_forecast_output.xlsx",
-    mime=(
-        "application/vnd.openxmlformats-officedocument."
-        "spreadsheetml.sheet"
-    ),
+    mime=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
 )

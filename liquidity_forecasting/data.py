@@ -3,7 +3,6 @@ from typing import Optional, Sequence
 import numpy as np
 import pandas as pd
 
-
 DEFAULT_CURRENCIES = ("EUR", "USD", "JPY", "BRL", "INR", "AUD")
 
 CURRENCY_SCALES = {

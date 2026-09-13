@@ -2,7 +2,6 @@ from typing import Mapping
 
 import pandas as pd
 
-
 DEFAULT_OPENING_BALANCES = {
     "EUR": 250_000.0,
     "USD": 275_000.0,
@@ -35,27 +34,20 @@ def project_balances(
 
     for currency, cashflows in forecast_cashflows.items():
         if currency not in opening_balances:
-            raise ValueError(
-                f"Opening balance is missing for currency '{currency}'."
-            )
+            raise ValueError(f"Opening balance is missing for currency '{currency}'.")
 
         cashflow_series = pd.Series(cashflows, dtype=float)
 
         if cashflow_series.empty:
-            raise ValueError(
-                f"Cashflow forecast for '{currency}' cannot be empty."
-            )
+            raise ValueError(f"Cashflow forecast for '{currency}' cannot be empty.")
 
         if expected_index is None:
             expected_index = cashflow_series.index
         elif not cashflow_series.index.equals(expected_index):
-            raise ValueError(
-                "All cashflow forecasts must use the same dates."
-            )
+            raise ValueError("All cashflow forecasts must use the same dates.")
 
         projected[currency] = (
-            float(opening_balances[currency])
-            + cashflow_series.cumsum()
+            float(opening_balances[currency]) + cashflow_series.cumsum()
         )
 
     result = pd.DataFrame(projected)
@@ -80,9 +72,7 @@ def calculate_liquidity_shortfalls(
 
     if missing_currencies:
         missing = ", ".join(missing_currencies)
-        raise ValueError(
-            f"Minimum buffers are missing for: {missing}."
-        )
+        raise ValueError(f"Minimum buffers are missing for: {missing}.")
 
     shortfalls = {}
 
@@ -90,13 +80,11 @@ def calculate_liquidity_shortfalls(
         minimum_buffer = float(minimum_buffers[currency])
 
         if minimum_buffer < 0:
-            raise ValueError(
-                f"Minimum buffer for '{currency}' cannot be negative."
-            )
+            raise ValueError(f"Minimum buffer for '{currency}' cannot be negative.")
 
-        shortfalls[currency] = (
-            minimum_buffer - projected_balances[currency]
-        ).clip(lower=0)
+        shortfalls[currency] = (minimum_buffer - projected_balances[currency]).clip(
+            lower=0
+        )
 
     result = pd.DataFrame(shortfalls)
     result.index.name = projected_balances.index.name

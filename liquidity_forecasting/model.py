@@ -1,9 +1,14 @@
-from dataclasses import dataclass
 import warnings
+from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
+from numpy.linalg import LinAlgError
+from scipy.stats import norm
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+from liquidity_forecasting.evaluation import seasonal_naive_forecast
 
 
 @dataclass(frozen=True)
@@ -12,6 +17,51 @@ class ForecastResult:
     lower: pd.Series
     upper: pd.Series
     converged: bool
+    model_name: str = "SARIMAX"
+
+
+def seasonal_naive_fallback(
+    series: pd.Series,
+    periods: int,
+    alpha: float = 0.05,
+    season_length: int = 7,
+) -> ForecastResult:
+    """Return a seasonal-naive forecast with empirical intervals."""
+    mean = seasonal_naive_forecast(
+        series,
+        periods=periods,
+        season_length=season_length,
+    )
+
+    values = np.asarray(series, dtype=float)
+    seasonal_errors = values[season_length:] - values[:-season_length]
+
+    if len(seasonal_errors) > 1:
+        error_scale = float(np.std(seasonal_errors, ddof=1))
+    else:
+        error_scale = 0.0
+
+    critical_value = float(norm.ppf(1 - alpha / 2))
+    interval_width = critical_value * error_scale
+
+    lower = pd.Series(
+        mean.to_numpy() - interval_width,
+        index=mean.index,
+        name=series.name,
+    )
+    upper = pd.Series(
+        mean.to_numpy() + interval_width,
+        index=mean.index,
+        name=series.name,
+    )
+
+    return ForecastResult(
+        mean=mean,
+        lower=lower,
+        upper=upper,
+        converged=False,
+        model_name="Seasonal Naive (fallback)",
+    )
 
 
 def forecast_currency_with_intervals(
@@ -22,65 +72,82 @@ def forecast_currency_with_intervals(
     seasonal: tuple[int, int, int, int] = (1, 1, 1, 7),
     alpha: float = 0.05,
 ) -> ForecastResult:
-    """Fit SARIMAX and return forecasts with prediction intervals."""
+    """Fit SARIMAX, falling back when fitting fails or does not converge."""
     if not 0 < alpha < 1:
         raise ValueError("Alpha must be between zero and one.")
 
     series = df[currency]
 
-    with warnings.catch_warnings(record=True) as captured_warnings:
-        warnings.simplefilter("always", ConvergenceWarning)
+    try:
+        with warnings.catch_warnings(record=True) as captured_warnings:
+            warnings.simplefilter("always", ConvergenceWarning)
 
-        model = SARIMAX(
+            model = SARIMAX(
+                series,
+                order=order,
+                seasonal_order=seasonal,
+            )
+            fitted_model = model.fit(disp=False)
+
+        convergence_warning = any(
+            issubclass(warning.category, ConvergenceWarning)
+            for warning in captured_warnings
+        )
+
+        converged = bool(
+            fitted_model.mle_retvals.get(
+                "converged",
+                not convergence_warning,
+            )
+        )
+
+        if not converged or convergence_warning:
+            return seasonal_naive_fallback(
+                series,
+                periods=periods,
+                alpha=alpha,
+                season_length=seasonal[3],
+            )
+
+        prediction = fitted_model.get_forecast(steps=periods)
+        confidence_intervals = prediction.conf_int(alpha=alpha)
+
+        future_index = pd.date_range(
+            start=series.index.max() + pd.Timedelta(days=1),
+            periods=periods,
+            freq="D",
+        )
+
+        mean = pd.Series(
+            np.asarray(prediction.predicted_mean, dtype=float),
+            index=future_index,
+            name=currency,
+        )
+        lower = pd.Series(
+            np.asarray(confidence_intervals.iloc[:, 0], dtype=float),
+            index=future_index,
+            name=currency,
+        )
+        upper = pd.Series(
+            np.asarray(confidence_intervals.iloc[:, 1], dtype=float),
+            index=future_index,
+            name=currency,
+        )
+
+        return ForecastResult(
+            mean=mean,
+            lower=lower,
+            upper=upper,
+            converged=True,
+            model_name="SARIMAX",
+        )
+    except (ArithmeticError, LinAlgError, RuntimeError, ValueError):
+        return seasonal_naive_fallback(
             series,
-            order=order,
-            seasonal_order=seasonal,
+            periods=periods,
+            alpha=alpha,
+            season_length=seasonal[3],
         )
-        fitted_model = model.fit(disp=False)
-
-    convergence_warning = any(
-        issubclass(warning.category, ConvergenceWarning)
-        for warning in captured_warnings
-    )
-
-    converged = bool(
-        fitted_model.mle_retvals.get(
-            "converged",
-            not convergence_warning,
-        )
-    )
-
-    prediction = fitted_model.get_forecast(steps=periods)
-    confidence_intervals = prediction.conf_int(alpha=alpha)
-
-    future_index = pd.date_range(
-        start=series.index.max() + pd.Timedelta(days=1),
-        periods=periods,
-        freq="D",
-    )
-
-    mean = pd.Series(
-        prediction.predicted_mean.to_numpy(),
-        index=future_index,
-        name=currency,
-    )
-    lower = pd.Series(
-        confidence_intervals.iloc[:, 0].to_numpy(),
-        index=future_index,
-        name=currency,
-    )
-    upper = pd.Series(
-        confidence_intervals.iloc[:, 1].to_numpy(),
-        index=future_index,
-        name=currency,
-    )
-
-    return ForecastResult(
-        mean=mean,
-        lower=lower,
-        upper=upper,
-        converged=converged,
-    )
 
 
 def forecast_currency(
@@ -90,7 +157,7 @@ def forecast_currency(
     order: tuple[int, int, int] = (1, 1, 1),
     seasonal: tuple[int, int, int, int] = (1, 1, 1, 7),
 ) -> pd.Series:
-    """Return the mean SARIMAX forecast for one currency."""
+    """Return the mean from the production forecasting pipeline."""
     result = forecast_currency_with_intervals(
         df=df,
         currency=currency,

@@ -1,6 +1,7 @@
+from typing import Dict, Mapping
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Mapping
 from scipy.optimize import linprog
 
 DEFAULT_TRANSFER_COST_RATES = {
@@ -20,6 +21,7 @@ DEFAULT_PRIORITY_WEIGHTS = {
     "INR": 1.0,
     "AUD": 1.0,
 }
+
 
 def optimize_allocation(forecasts: Dict[str, pd.Series]) -> Dict[str, float]:
     """
@@ -50,6 +52,7 @@ def optimize_allocation(forecasts: Dict[str, pd.Series]) -> Dict[str, float]:
     allocations = {ccy: total / grand_total for ccy, total in totals.items()}
     return allocations
 
+
 def allocate_funds_by_shortfall(
     shortfalls_in_base_currency: Mapping[str, float],
     available_funds: float,
@@ -74,17 +77,12 @@ def allocate_funds_by_shortfall(
 
     if negative_currencies:
         invalid = ", ".join(negative_currencies)
-        raise ValueError(
-            f"Liquidity shortfalls cannot be negative for: {invalid}."
-        )
+        raise ValueError(f"Liquidity shortfalls cannot be negative for: {invalid}.")
 
     total_shortfall = sum(normalized_shortfalls.values())
 
     if total_shortfall == 0 or available_funds == 0:
-        return {
-            currency: 0.0
-            for currency in normalized_shortfalls
-        }
+        return {currency: 0.0 for currency in normalized_shortfalls}
 
     funding_ratio = min(
         1.0,
@@ -95,6 +93,8 @@ def allocate_funds_by_shortfall(
         currency: shortfall * funding_ratio
         for currency, shortfall in normalized_shortfalls.items()
     }
+
+
 def optimize_funding_allocation(
     shortfalls_in_base_currency: Mapping[str, float],
     available_funds: float,
@@ -111,24 +111,16 @@ def optimize_funding_allocation(
     currencies = list(shortfalls_in_base_currency)
 
     missing_costs = [
-        currency
-        for currency in currencies
-        if currency not in transfer_cost_rates
+        currency for currency in currencies if currency not in transfer_cost_rates
     ]
     if missing_costs:
         missing = ", ".join(missing_costs)
-        raise ValueError(
-            f"Transfer costs are missing for: {missing}."
-        )
+        raise ValueError(f"Transfer costs are missing for: {missing}.")
 
     shortfalls = [
-        float(shortfalls_in_base_currency[currency])
-        for currency in currencies
+        float(shortfalls_in_base_currency[currency]) for currency in currencies
     ]
-    costs = [
-        float(transfer_cost_rates[currency])
-        for currency in currencies
-    ]
+    costs = [float(transfer_cost_rates[currency]) for currency in currencies]
 
     if any(shortfall < 0 for shortfall in shortfalls):
         raise ValueError("Liquidity shortfalls cannot be negative.")
@@ -140,52 +132,31 @@ def optimize_funding_allocation(
         priorities = [1.0 for _ in currencies]
     else:
         missing_priorities = [
-            currency
-            for currency in currencies
-            if currency not in priority_weights
+            currency for currency in currencies if currency not in priority_weights
         ]
         if missing_priorities:
             missing = ", ".join(missing_priorities)
-            raise ValueError(
-                f"Priority weights are missing for: {missing}."
-            )
+            raise ValueError(f"Priority weights are missing for: {missing}.")
 
-        priorities = [
-            float(priority_weights[currency])
-            for currency in currencies
-        ]
+        priorities = [float(priority_weights[currency]) for currency in currencies]
 
     if any(priority <= 0 for priority in priorities):
         raise ValueError("Priority weights must be positive.")
 
     if available_funds == 0 or sum(shortfalls) == 0:
-        return {
-            currency: 0.0
-            for currency in currencies
-        }
+        return {currency: 0.0 for currency in currencies}
 
-    objective = [
-        cost - priority
-        for cost, priority in zip(costs, priorities)
-    ]
+    objective = [cost - priority for cost, priority in zip(costs, priorities)]
 
     result = linprog(
         c=objective,
         A_ub=[[1.0] * len(currencies)],
         b_ub=[float(available_funds)],
-        bounds=[
-            (0.0, shortfall)
-            for shortfall in shortfalls
-        ],
+        bounds=[(0.0, shortfall) for shortfall in shortfalls],
         method="highs",
     )
 
     if not result.success:
-        raise RuntimeError(
-            f"Funding optimization failed: {result.message}"
-        )
+        raise RuntimeError(f"Funding optimization failed: {result.message}")
 
-    return {
-        currency: float(amount)
-        for currency, amount in zip(currencies, result.x)
-    }
+    return {currency: float(amount) for currency, amount in zip(currencies, result.x)}

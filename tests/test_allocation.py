@@ -55,6 +55,7 @@ def test_reject_negative_shortfall():
             available_funds=100.0,
         )
 
+
 def test_optimizer_covers_all_shortfalls_when_funds_are_sufficient():
     result = optimize_funding_allocation(
         {"EUR": 100.0, "USD": 50.0},

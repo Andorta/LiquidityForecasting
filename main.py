@@ -39,46 +39,33 @@ def main():
         for currency in cashflows.columns
     }
 
-    forecasts = {
-        currency: result.mean
-        for currency, result in forecast_results.items()
-    }
+    forecasts = {currency: result.mean for currency, result in forecast_results.items()}
 
-    non_converged_currencies = [
+    fallback_currencies = [
         currency
         for currency, result in forecast_results.items()
-        if not result.converged
+        if result.model_name != "SARIMAX"
     ]
 
-    if non_converged_currencies:
-        print(
-            "Warning: SARIMAX did not fully converge for: "
-            + ", ".join(non_converged_currencies)
-        )
+    if fallback_currencies:
+        print("Seasonal-naive fallback used for: " + ", ".join(fallback_currencies))
 
     opening_balances = {
-        currency: DEFAULT_OPENING_BALANCES[currency]
-        for currency in forecasts
+        currency: DEFAULT_OPENING_BALANCES[currency] for currency in forecasts
     }
 
     minimum_buffers = {
-        currency: DEFAULT_MINIMUM_BUFFERS[currency]
-        for currency in forecasts
+        currency: DEFAULT_MINIMUM_BUFFERS[currency] for currency in forecasts
     }
 
-    fx_rates = {
-        currency: DEFAULT_FX_TO_EUR[currency]
-        for currency in forecasts
-    }
+    fx_rates = {currency: DEFAULT_FX_TO_EUR[currency] for currency in forecasts}
 
     transfer_cost_rates = {
-        currency: DEFAULT_TRANSFER_COST_RATES[currency]
-        for currency in forecasts
+        currency: DEFAULT_TRANSFER_COST_RATES[currency] for currency in forecasts
     }
 
     priority_weights = {
-        currency: DEFAULT_PRIORITY_WEIGHTS[currency]
-        for currency in forecasts
+        currency: DEFAULT_PRIORITY_WEIGHTS[currency] for currency in forecasts
     }
 
     projected_balances = project_balances(
@@ -96,9 +83,7 @@ def main():
         fx_rates,
     )
 
-    maximum_shortfalls_in_base = (
-        shortfalls_in_base_currency.max()
-    )
+    maximum_shortfalls_in_base = shortfalls_in_base_currency.max()
 
     available_funds = 100_000.0
 
@@ -113,28 +98,23 @@ def main():
     for currency, balance in projected_balances.min().items():
         print(f"{currency}: {balance:,.2f}")
 
-    print(
-        f"\nMaximum liquidity shortfalls in {BASE_CURRENCY}:"
-    )
+    print(f"\nMaximum liquidity shortfalls in {BASE_CURRENCY}:")
     for currency, shortfall in maximum_shortfalls_in_base.items():
         print(f"{currency}: {shortfall:,.2f}")
 
     print(
-        f"\nRecommended funding in {BASE_CURRENCY} "
-        f"(available: {available_funds:,.2f}):"
+        f"\nRecommended funding in {BASE_CURRENCY} (available: {available_funds:,.2f}):"
     )
     for currency, amount in funding_recommendations.items():
         print(f"{currency}: {amount:,.2f}")
 
     estimated_transfer_cost = sum(
-        funding_recommendations[currency]
-        * transfer_cost_rates[currency]
+        funding_recommendations[currency] * transfer_cost_rates[currency]
         for currency in funding_recommendations
     )
 
     print(
-        f"\nEstimated transfer cost in {BASE_CURRENCY}: "
-        f"{estimated_transfer_cost:,.2f}"
+        f"\nEstimated transfer cost in {BASE_CURRENCY}: {estimated_transfer_cost:,.2f}"
     )
 
     save_to_excel(

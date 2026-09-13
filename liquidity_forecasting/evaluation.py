@@ -1,6 +1,7 @@
+from typing import Callable
+
 import numpy as np
 import pandas as pd
-from typing import Callable
 
 
 def seasonal_naive_forecast(
@@ -19,9 +20,7 @@ def seasonal_naive_forecast(
         raise ValueError("Season length must be positive.")
 
     if len(series) < season_length:
-        raise ValueError(
-            "Series must contain at least one complete seasonal cycle."
-        )
+        raise ValueError("Series must contain at least one complete seasonal cycle.")
 
     recent_cycle = series.iloc[-season_length:].to_numpy()
     forecast_values = np.resize(recent_cycle, periods)
@@ -45,9 +44,7 @@ def mean_absolute_error(
 ) -> float:
     """Calculate mean absolute forecast error."""
     if len(actual) != len(predicted):
-        raise ValueError(
-            "Actual and predicted values must have equal lengths."
-        )
+        raise ValueError("Actual and predicted values must have equal lengths.")
 
     if len(actual) == 0:
         raise ValueError("Forecast evaluation data cannot be empty.")
@@ -55,9 +52,7 @@ def mean_absolute_error(
     actual_values = np.asarray(actual, dtype=float)
     predicted_values = np.asarray(predicted, dtype=float)
 
-    return float(
-        np.mean(np.abs(actual_values - predicted_values))
-    )
+    return float(np.mean(np.abs(actual_values - predicted_values)))
 
 
 def mean_absolute_scaled_error(
@@ -68,9 +63,7 @@ def mean_absolute_scaled_error(
 ) -> float:
     """Calculate error relative to an in-sample seasonal-naive model."""
     if len(training_series) <= season_length:
-        raise ValueError(
-            "Training data must exceed the season length."
-        )
+        raise ValueError("Training data must exceed the season length.")
 
     forecast_error = mean_absolute_error(actual, predicted)
 
@@ -80,17 +73,16 @@ def mean_absolute_scaled_error(
     )
 
     naive_errors = np.abs(
-        training_values[season_length:]
-        - training_values[:-season_length]
+        training_values[season_length:] - training_values[:-season_length]
     )
     scale = float(np.mean(naive_errors))
 
     if scale == 0:
-        raise ValueError(
-            "MASE cannot be calculated when the scale is zero."
-        )
+        raise ValueError("MASE cannot be calculated when the scale is zero.")
 
     return forecast_error / scale
+
+
 def rolling_backtest_currency(
     data: pd.DataFrame,
     currency: str,
@@ -113,8 +105,7 @@ def rolling_backtest_currency(
 
     if len(data) < required_observations:
         raise ValueError(
-            f"Backtesting requires at least "
-            f"{required_observations} observations."
+            f"Backtesting requires at least {required_observations} observations."
         )
 
     results = []
@@ -139,7 +130,7 @@ def rolling_backtest_currency(
         )
 
         predictions = {
-            "SARIMAX": model_forecast,
+            "Forecast Pipeline": model_forecast,
             "Seasonal Naive": naive_forecast,
         }
 
@@ -164,6 +155,8 @@ def rolling_backtest_currency(
             )
 
     return pd.DataFrame(results)
+
+
 def summarize_backtest_results(
     results: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -173,9 +166,7 @@ def summarize_backtest_results(
     missing_columns = required_columns - set(results.columns)
     if missing_columns:
         missing = ", ".join(sorted(missing_columns))
-        raise ValueError(
-            f"Backtest results are missing columns: {missing}."
-        )
+        raise ValueError(f"Backtest results are missing columns: {missing}.")
 
     if results.empty:
         raise ValueError("Backtest results cannot be empty.")

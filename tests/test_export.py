@@ -71,9 +71,7 @@ def test_excel_export_contains_expected_sheets():
     output.seek(0)
 
     with ZipFile(output) as workbook:
-        workbook_xml = workbook.read(
-            "xl/workbook.xml"
-        ).decode("utf-8")
+        workbook_xml = workbook.read("xl/workbook.xml").decode("utf-8")
 
     assert "Historical_Cashflows" in workbook_xml
     assert "Forecasts" in workbook_xml
