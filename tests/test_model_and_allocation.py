@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from liquidity_forecasting.data import load_cashflow_data, preprocess_data
-from liquidity_forecasting.model import forecast_currency
+from liquidity_forecasting.model import forecast_currency, forecast_currency_with_intervals
 from liquidity_forecasting.allocation import optimize_allocation
 
 
@@ -47,4 +47,22 @@ def test_optimize_allocation_sums_to_one_and_is_positive():
     values = np.array(list(allocations.values()))
     assert np.all(values > 0)
     assert np.isclose(values.sum(), 1.0, atol=1e-6)
+
+def test_forecast_result_contains_prediction_intervals():
+    df = preprocess_data(load_cashflow_data())
+    horizon = 7
+
+    result = forecast_currency_with_intervals(
+        df,
+        "EUR",
+        periods=horizon,
+    )
+
+    assert len(result.mean) == horizon
+    assert len(result.lower) == horizon
+    assert len(result.upper) == horizon
+    assert result.mean.index.equals(result.lower.index)
+    assert result.mean.index.equals(result.upper.index)
+    assert (result.lower <= result.upper).all()
+    assert isinstance(result.converged, bool)
 

@@ -17,7 +17,9 @@ from liquidity_forecasting.fx import (
     DEFAULT_FX_TO_EUR,
     convert_frame_to_base_currency,
 )
-from liquidity_forecasting.model import forecast_currency
+from liquidity_forecasting.model import (
+    forecast_currency_with_intervals,
+)
 from liquidity_forecasting.plotting import plot_forecasts
 from liquidity_forecasting.validation import validate_cashflow_data
 
@@ -27,10 +29,30 @@ def main():
     cashflows = preprocess_data(cashflows)
     validate_cashflow_data(cashflows)
 
-    forecasts = {
-        currency: forecast_currency(cashflows, currency)
+    forecast_results = {
+        currency: forecast_currency_with_intervals(
+            cashflows,
+            currency,
+        )
         for currency in cashflows.columns
     }
+
+    forecasts = {
+        currency: result.mean
+        for currency, result in forecast_results.items()
+    }
+
+    non_converged_currencies = [
+        currency
+        for currency, result in forecast_results.items()
+        if not result.converged
+    ]
+
+    if non_converged_currencies:
+        print(
+            "Warning: SARIMAX did not fully converge for: "
+            + ", ".join(non_converged_currencies)
+        )
 
     opening_balances = {
         currency: DEFAULT_OPENING_BALANCES[currency]
@@ -96,6 +118,7 @@ def main():
         funding_recommendations,
         projected_balances=projected_balances,
         liquidity_shortfalls=shortfalls,
+        forecast_results=forecast_results,
     )
 
     plot_forecasts(cashflows, forecasts)
