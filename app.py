@@ -29,6 +29,13 @@ from liquidity_forecasting.model import (
     forecast_currency,
     forecast_currency_with_intervals,
 )
+
+from liquidity_forecasting.allocation import (
+    DEFAULT_PRIORITY_WEIGHTS,
+    DEFAULT_TRANSFER_COST_RATES,
+    optimize_funding_allocation,
+)
+
 from liquidity_forecasting.validation import validate_cashflow_data
 
 
@@ -200,6 +207,38 @@ available_funds = st.sidebar.number_input(
     step=5_000.0,
 )
 
+with st.sidebar.expander("Optimization Settings"):
+    transfer_cost_rates = {}
+    priority_weights = {}
+
+    for currency in currencies:
+        default_cost = DEFAULT_TRANSFER_COST_RATES.get(
+            currency,
+            0.002,
+        )
+        default_priority = DEFAULT_PRIORITY_WEIGHTS.get(
+            currency,
+            1.0,
+        )
+
+        cost_percentage = st.number_input(
+            f"{currency} transfer cost (%)",
+            min_value=0.0,
+            value=float(default_cost * 100),
+            step=0.01,
+            format="%.3f",
+        )
+
+        transfer_cost_rates[currency] = (
+            cost_percentage / 100
+        )
+
+        priority_weights[currency] = st.number_input(
+            f"{currency} priority weight",
+            min_value=0.1,
+            value=float(default_priority),
+            step=0.1,
+        )
 
 # Forecast computation
 st.subheader(f"Forecasts for Next {horizon} Days")
@@ -246,9 +285,11 @@ shortfalls_in_base_currency = convert_frame_to_base_currency(
 
 maximum_shortfalls_in_base = shortfalls_in_base_currency.max()
 
-funding_recommendations = allocate_funds_by_shortfall(
+funding_recommendations = optimize_funding_allocation(
     maximum_shortfalls_in_base.to_dict(),
     available_funds,
+    transfer_cost_rates,
+    priority_weights,
 )
 
 recommended_funding = pd.Series(
@@ -265,6 +306,10 @@ recommended_funding_local = pd.Series(
         currency: amount / fx_rates[currency]
         for currency, amount in funding_recommendations.items()
     }
+)
+
+estimated_transfer_costs = recommended_funding * pd.Series(
+    transfer_cost_rates
 )
 
 
@@ -427,6 +472,13 @@ funding_summary = pd.DataFrame(
         f"Remaining Shortfall ({BASE_CURRENCY})": (
             remaining_shortfalls
         ),
+                "Transfer Cost (%)": (
+            pd.Series(transfer_cost_rates) * 100
+        ),
+        "Priority Weight": pd.Series(priority_weights),
+        f"Estimated Transfer Cost ({BASE_CURRENCY})": (
+            estimated_transfer_costs
+        ),
     }
 )
 
@@ -438,7 +490,7 @@ total_required = maximum_shortfalls_in_base.sum()
 total_recommended = recommended_funding.sum()
 total_remaining = remaining_shortfalls.sum()
 
-metric_columns = st.columns(3)
+metric_columns = st.columns(4)
 
 metric_columns[0].metric(
     f"Required ({BASE_CURRENCY})",
@@ -451,6 +503,10 @@ metric_columns[1].metric(
 metric_columns[2].metric(
     f"Unfunded ({BASE_CURRENCY})",
     f"{total_remaining:,.2f}",
+)
+metric_columns[3].metric(
+    f"Transfer Cost ({BASE_CURRENCY})",
+    f"{estimated_transfer_costs.sum():,.2f}",
 )
 
 if total_remaining > 0:
